@@ -1,0 +1,3 @@
+# Optional (.env.local). Yandex reverse-image search runs automatically when SERPAPI_KEY is set.
+# Add this line to switch it off and save SerpApi searches:
+# YANDEX_SEARCH=off
