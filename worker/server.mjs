@@ -35,6 +35,36 @@ http.createServer(async (req, res) => {
   }
   if (req.headers.authorization !== `Bearer ${process.env.WORKER_SECRET}`) return res.writeHead(401).end();
   const q = u.searchParams;
+  if (u.pathname === "/captions") {
+    const url = q.get("url") || "";
+    let dir;
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (!["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"].includes(host))
+        return res.writeHead(400).end(JSON.stringify({ error: "Captions are only supported for YouTube links." }));
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), "c-"));
+      await run("yt-dlp", ["--skip-download", "--no-warnings", "--write-subs", "--write-auto-subs", "--sub-langs", "en.*,en",
+        "--sub-format", "vtt", "--output", path.join(dir, "caption.%(ext)s"), url], { timeout: 20000, maxBuffer: 1024 * 1024 });
+      const files = (await fs.readdir(dir)).filter((f) => f.endsWith(".vtt")).sort();
+      const lines = new Set();
+      let captionLength = 0;
+      for (const file of files) {
+        const content = await fs.readFile(path.join(dir, file), "utf8");
+        for (const line of content.split(/\r?\n/)) {
+          const text = line.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").trim();
+          if (!text || /^WEBVTT|^(NOTE|STYLE|REGION)\b/.test(text) || /^\d+$/.test(text) ||
+            /^\d{2}:\d{2}(?::\d{2})?[.,]\d{3}\s+-->/.test(text)) continue;
+          if (!lines.has(text)) { lines.add(text); captionLength += text.length + 1; }
+          if (captionLength >= 12000) break;
+        }
+        if (captionLength >= 12000) break;
+      }
+      const captions = [...lines].join(" ").slice(0, 12000);
+      return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ captions }));
+    } catch (e) {
+      return res.writeHead(502, { "Content-Type": "application/json" }).end(JSON.stringify({ error: String(e.message).slice(0, 200) }));
+    } finally { if (dir) await fs.rm(dir, { recursive: true, force: true }); }
+  }
   const url = q.get("url"), start = +q.get("start") || 0, n = Math.min(+q.get("n") || 6, 40);
   let dir;
   try {

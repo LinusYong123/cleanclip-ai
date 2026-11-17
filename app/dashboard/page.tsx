@@ -227,12 +227,26 @@ export default function Dashboard() {
                   <ClipPlayer result={result} seg={seg != null ? segs[seg] : null} fileUrl={file.current?.url} />
                   <div className="text-sm">
                     <h2 className="text-lg font-semibold text-white">{result.title}</h2>
-                    <p>{[result.channel, result.publishedAt && "Uploaded " + date(result.publishedAt), result.duration ? fmt(result.duration) : "", result.platform].filter(Boolean).join(" · ")}</p>
+                    <p>{[result.channel, result.publishedAt && "Uploaded " + date(result.publishedAt), result.duration ? fmt(result.duration) : "", result.views ? `${result.views.toLocaleString()} views` : "", result.platform].filter(Boolean).join(" · ")}</p>
                     <p className="mt-2">
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ${result.verdict === "reupload" ? "bg-red-400/10 text-red-300" : "bg-cream/10 text-cream"}`}>
                         {result.verdict === "reupload" ? "Likely a re-upload" : "No earlier source found"}</span>
                       <span className="ml-2 text-xs">{result.framesUsed} best frames searched</span></p>
                     {result.note && <p className="mt-1 text-xs text-cream">{result.note}</p>}
+                    {result.sourceDetails && (
+                      <details className="mt-3 rounded-xl border border-line bg-surface p-3 text-xs">
+                        <summary className="cursor-pointer text-white">Source video details and captions</summary>
+                        <div className="mt-3 space-y-2">
+                          {result.sourceDetails.description && <p className="whitespace-pre-wrap">{result.sourceDetails.description}</p>}
+                          {result.sourceDetails.tags?.length > 0 && <p><span className="text-white">Tags: </span>{result.sourceDetails.tags.join(", ")}</p>}
+                          {result.sourceDetails.categoryId && <p><span className="text-white">Category ID: </span>{result.sourceDetails.categoryId}</p>}
+                          {result.sourceDetails.likes != null && <p><span className="text-white">Likes: </span>{result.sourceDetails.likes.toLocaleString()}{result.sourceDetails.commentCount != null && ` · ${result.sourceDetails.commentCount.toLocaleString()} comments`}</p>}
+                          {result.sourceDetails.captions
+                            ? <p className="max-h-48 overflow-y-auto whitespace-pre-wrap"><span className="text-white">Captions: </span>{result.sourceDetails.captions}</p>
+                            : <p className="text-body/70">Captions were not available from the source.</p>}
+                        </div>
+                      </details>
+                    )}
                     {result.context?.classification && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                         <span className="rounded-full bg-accent/20 px-2 py-0.5 font-medium text-accent">{result.context.classification}</span>

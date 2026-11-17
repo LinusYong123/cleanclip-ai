@@ -11,7 +11,7 @@ const links = [
   { href: "/dashboard#history", Icon: History, label: "Search history" },
   { href: "/dashboard#clips", Icon: Scissors, label: "Clips" },
   { href: "/billing", Icon: CreditCard, label: "Billing" },
-  { href: "/survey", Icon: Gift, label: "Free searches" },
+  { href: "/survey", Icon: Gift, label: "Free credits" },
 ];
 
 /** Sidebar: the Upgrade button is ALWAYS rendered, whatever the plan. */
@@ -34,11 +34,16 @@ export default function DashboardSidebar({ plan, used, onUpgrade, bonus = 0 }: P
         <span className="inline-block rounded-full bg-cream/10 px-3 py-1 text-xs font-medium text-cream">{info.name} plan</span>
         <div>
           <div className="mb-1 flex justify-between text-xs text-body">
-            <span>Reverse searches</span>
+            <span>Credits</span>
             <span>{unlimited ? `${used} used · Unlimited` : `${Math.min(used, info.limit!)} / ${info.limit}${bonus ? ` (+${bonus} bonus)` : ""}`}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-line">
-            <motion.div className="h-full bg-accent" initial={{ width: 0 }} animate={{ width: `${pct}%` }} />
+            <motion.div 
+              className="h-full bg-accent" 
+              initial={false} 
+              animate={{ width: `${pct}%` }} 
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
         {/* Persistent upgrade CTA, visible on Free, Pro and Elite */}

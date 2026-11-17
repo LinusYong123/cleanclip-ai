@@ -11,7 +11,12 @@ create table public.subscriptions (
   interval text check (interval in ('month','year')),
   status text not null default 'active',
   stripe_subscription_id text,
-  current_period_end timestamptz
+  current_period_start timestamptz,
+  current_period_end timestamptz,
+  trial_used boolean not null default false,
+  trial_ends_at timestamptz,
+  bonus_searches integer not null default 0,
+  cancel_at_period_end boolean not null default false
 );
 create table public.searches_usage (
   id bigint generated always as identity primary key,

@@ -24,6 +24,7 @@ export interface Cand {
 export interface Signals {
   visual: number; // look-alike to our key frames
   engines: number; // agreement between search engines and frames
+  audio: number | null; // audio similarity match
   ocr: number | null; // on-screen text overlap
   metadata: number | null; // title and description vs the scene's subject
   duration_ok: boolean | null; // is the candidate long enough to contain the clip?

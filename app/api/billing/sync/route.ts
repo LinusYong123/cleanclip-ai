@@ -25,7 +25,10 @@ export async function POST(req: Request) {
       const s = await stripe.checkout.sessions.retrieve(session_id);
       if (s.client_reference_id !== user.id && s.metadata?.user_id !== user.id) return NextResponse.json({ error: "That checkout isn't yours." }, { status: 403 });
       customer = s.customer as string | null;
-      if (customer) await admin.from("users").update({ stripe_customer_id: customer }).eq("id", user.id);
+      if (customer) {
+        const { error } = await admin.from("users").update({ stripe_customer_id: customer }).eq("id", user.id);
+        if (error) throw error;
+      }
       if (s.subscription) { await sync(await stripe.subscriptions.retrieve(s.subscription as string), user.id); return NextResponse.json({ ok: true }); }
     }
     if (!customer) customer = (await supabase.from("users").select("stripe_customer_id").single()).data?.stripe_customer_id ?? null;

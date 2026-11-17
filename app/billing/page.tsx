@@ -67,7 +67,7 @@ export default function Billing() {
 
           <div>
             <div className="mb-1 flex justify-between text-xs">
-              <span>Reverse searches this period</span>
+              <span>Credits used this period</span>
               <span>{unlimited ? `${used} used · Unlimited` : `${Math.min(used, plan.limit!)} / ${plan.limit}`}{sub.bonus_searches ? ` (+${sub.bonus_searches} bonus)` : ""}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-line"><motion.div className="h-full bg-accent" initial={{ width: 0 }} animate={{ width: `${pct}%` }} /></div>
@@ -90,7 +90,7 @@ export default function Billing() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirm(false)} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
             <motion.div initial={{ scale: 0.96 }} animate={{ scale: 1 }} exit={{ scale: 0.96 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-bg p-6">
               <h3 className="text-lg font-semibold text-white">Cancel your {plan.name} {trialing ? "trial" : "subscription"}?</h3>
-              <p className="text-sm">{trialing ? `You keep Elite until ${endDate} and you won't be charged.` : `You keep ${plan.name} until ${endDate}, then move to the Free plan (3 searches a month). You can resume any time before then.`}</p>
+              <p className="text-sm">{trialing ? `You keep Elite until ${endDate} and you won't be charged.` : `You keep ${plan.name} until ${endDate}, then move to the Free plan (3 credits a month). You can resume any time before then.`}</p>
               <div className="flex justify-end gap-3">
                 <button onClick={() => setConfirm(false)} className="rounded-xl border border-line px-4 py-2 text-sm text-white">Keep it</button>
                 <button onClick={async () => { if (await act("/api/billing/cancel")) setConfirm(false); }} disabled={busy} className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Cancelling…" : "Yes, cancel"}</button>

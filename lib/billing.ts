@@ -20,8 +20,10 @@ export function fromPrice(id: string): { plan: PlanId; interval: Interval } | nu
  */
 export async function sync(sub: Stripe.Subscription, userId?: string) {
   const item: any = sub.items.data[0];
+  if (!item) throw new Error(`Stripe subscription ${sub.id} has no subscription items.`);
   const match = fromPrice(item.price.id);
   const live = ["active", "trialing", "past_due"].includes(sub.status);
+  if (live && !match) throw new Error(`No plan is configured for Stripe price ${item.price.id}.`);
   const patch = {
     plan: live && match ? match.plan : "free",
     interval: live && match ? match.interval : null,
@@ -34,6 +36,14 @@ export async function sync(sub: Stripe.Subscription, userId?: string) {
     ...(sub.trial_end ? { trial_used: true } : {}), // never reset: one trial per account
   };
   const uid = userId ?? sub.metadata?.user_id;
-  if (uid) await admin.from("subscriptions").upsert({ user_id: uid, ...patch });
-  else await admin.from("subscriptions").update(patch).eq("stripe_subscription_id", sub.id);
+  if (uid) {
+    const { error } = await admin.from("subscriptions").upsert({ user_id: uid, ...patch });
+    if (error) throw new Error(`Could not sync subscription ${sub.id}: ${error.message}`);
+    return;
+  }
+
+  const { data, error } = await admin.from("subscriptions").update(patch)
+    .eq("stripe_subscription_id", sub.id).select("user_id").maybeSingle();
+  if (error) throw new Error(`Could not sync subscription ${sub.id}: ${error.message}`);
+  if (!data) throw new Error(`No account is linked to Stripe subscription ${sub.id}.`);
 }

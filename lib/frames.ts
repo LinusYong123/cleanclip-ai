@@ -20,6 +20,18 @@ export async function workerFrames(url: string, start: number, dur: number, n: n
   return { bufs: (j.frames as string[]).map((b) => Buffer.from(b, "base64")), times: j.times as number[], duration: j.duration as number };
 }
 
+/** Optional English subtitle/transcript extraction for source metadata and search context. */
+export async function workerCaptions(url: string): Promise<string> {
+  if (!process.env.WORKER_URL) return "";
+  const q = new URLSearchParams({ url });
+  const r = await fetch(`${process.env.WORKER_URL}/captions?${q}`, {
+    headers: { Authorization: `Bearer ${process.env.WORKER_SECRET}` }, signal: AbortSignal.timeout(25000),
+  });
+  if (!r.ok) throw new Error("Caption extraction failed.");
+  const j = await r.json();
+  return typeof j.captions === "string" ? j.captions : "";
+}
+
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 /**

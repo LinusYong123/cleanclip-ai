@@ -82,8 +82,12 @@ export async function discover({ frames, info, core, hint, onProgress }: Discove
     counts[engine] = (counts[engine] ?? 0) + 1;
   };
 
-  // The AI scene profile runs alongside the image engines; Lens uses its broad query as a text hint
-  const scenePromise = analyzeScene(frames.slice(0, 3), [core, hint].filter(Boolean).join(". ") || undefined).catch(() => null);
+  const description = info?.description?.replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim() ?? "";
+  const sourceTerms = [info?.title, info?.tags?.slice(0, 6).join(" ")].filter(Boolean).join(" ");
+  const descriptiveTerms = [info?.captions?.slice(0, 140), description.slice(0, 120)].filter(Boolean).join(" ");
+  const metadataHint = [sourceTerms, description.slice(0, 300), info?.captions?.slice(0, 400), hint].filter(Boolean).join(". ");
+  // The AI scene profile runs alongside the image engines; source metadata and captions ground its queries.
+  const scenePromise = analyzeScene(frames.slice(0, 3), [core, metadataHint].filter(Boolean).join(". ") || undefined).catch(() => null);
   const [webs, img, subj, scene] = await Promise.all([
     Promise.all(frames.map(async (f) => { const w = await webInfo(f).catch(() => null); tick("Google Vision"); return w; })),
     (async () => imageEngines(frames, (await scenePromise)?.search_queries.broad ?? (core ? `${core} original` : undefined), () => tick("Google Lens and Yandex")))()
@@ -102,9 +106,24 @@ export async function discover({ frames, info, core, hint, onProgress }: Discove
 
   // Text engines: the AI's three queries (specific, broad, source-tracing), or label-based ones as a fallback
   const entities = [...ent.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d]) => d);
-  const queries = scene
+  const baseQueries = scene
     ? { A: scene.search_queries.specific, B: scene.search_queries.broad, C: scene.search_queries.source_tracing }
     : buildQueries(subj.labels, entities, core);
+  const addContext = (query: string, context: string) => {
+    const exclusionSuffix = query.match(/(?:\s+-[^\s]+)+$/)?.[0] ?? "";
+    const base = (exclusionSuffix ? query.slice(0, -exclusionSuffix.length) : query).replace(/\s+/g, " ").trim();
+    const cleanContext = context.replace(/\s+/g, " ").trim();
+    if (!cleanContext) return query;
+    const bodyLimit = 320 - exclusionSuffix.length;
+    const baseText = base.slice(0, Math.min(base.length, Math.floor(bodyLimit * 0.55)));
+    const contextText = cleanContext.slice(0, Math.max(0, bodyLimit - baseText.length - 1));
+    return `${baseText} ${contextText}`.trim().concat(exclusionSuffix);
+  };
+  const queries = {
+    A: addContext(baseQueries.A, sourceTerms),
+    B: addContext(baseQueries.B, descriptiveTerms),
+    C: addContext(baseQueries.C, [sourceTerms, descriptiveTerms].filter(Boolean).join(" ")),
+  };
   const results = await Promise.all([queries.A, queries.B, queries.C].map(async (q) => { const h = await textSearch(q); tick("Source-tracing queries"); return h; }));
   for (const hits of results) for (const h of hits) add(h.link, textEngine, h.thumbnail, h.title);
 

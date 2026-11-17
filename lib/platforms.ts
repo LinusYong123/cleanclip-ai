@@ -5,6 +5,7 @@ export interface VideoInfo {
   platform: Platform; url: string; title: string; author: string;
   thumbs: string[];            // frames we can send to reverse image search
   publishedAt?: string; duration?: number; views?: number; description?: string; videoId: string;
+  tags?: string[]; categoryId?: string; likes?: number; commentCount?: number; captions?: string;
 }
 
 // Only URLs that point at an actual video page count.
@@ -58,6 +59,9 @@ export async function getInfo(rawUrl: string): Promise<VideoInfo> {
     if (!v) throw new Error(r.error?.message ?? "YouTube video not found.");
     return { ...base, title: v.snippet.title, author: v.snippet.channelTitle, publishedAt: v.snippet.publishedAt,
       duration: seconds(v.contentDetails.duration), views: +v.statistics?.viewCount || 0, description: v.snippet.description,
+      tags: v.snippet.tags ?? [], categoryId: v.snippet.categoryId,
+      likes: v.statistics?.likeCount == null ? undefined : +v.statistics.likeCount,
+      commentCount: v.statistics?.commentCount == null ? undefined : +v.statistics.commentCount,
       thumbs: [1, 2, 3].map((n) => `https://i.ytimg.com/vi/${id}/hq${n}.jpg`).concat(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`) };
   }
 

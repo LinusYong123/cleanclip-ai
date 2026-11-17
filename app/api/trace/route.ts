@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { PLANS } from "@/lib/plans";
 import { windowStart } from "@/lib/usage";
 import { getInfo, parseVideoUrl, type VideoInfo } from "@/lib/platforms";
-import { fetchBuf, workerFrames } from "@/lib/frames";
+import { fetchBuf, workerCaptions, workerFrames } from "@/lib/frames";
 import { signature } from "@/lib/frameQuality";
 import { detectRanking } from "@/lib/ranking";
 import { coreQuery, attributions, videoLinks, COMPILATION } from "@/lib/sources";
@@ -62,7 +62,16 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   const clip = body.start != null && body.end != null;
 
   s1(10, info ? "grabbing frames" : "preparing your frames");
-  const raw = await rawFrames(body, info);
+  const [raw, captions] = await Promise.all([
+    rawFrames(body, info),
+    info?.platform === "youtube"
+      ? workerCaptions(info.url).catch((e) => {
+          console.warn("YouTube captions unavailable:", e);
+          return "";
+        })
+      : Promise.resolve(""),
+  ]);
+  if (info) info.captions = captions;
   if (!raw.bufs.length) throw new Error("Couldn't get any frames from that video.");
 
   // Clips for the UI: chapters, then ranking numbers, then AI scene detection, then equal parts
@@ -182,6 +191,10 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   return {
     platform: info?.platform ?? "upload", videoId: info?.videoId, title: info?.title ?? body.name ?? "Uploaded video", channel: info?.author ?? "",
     publishedAt: info?.publishedAt, duration, views: info?.views ?? 0, link: info?.url, thumbnail: info?.thumbs[info.thumbs.length - 1],
+    sourceDetails: info ? {
+      description: info.description ?? "", tags: info.tags ?? [], categoryId: info.categoryId,
+      likes: info.likes, commentCount: info.commentCount, captions: info.captions ?? "",
+    } : undefined,
     framesUsed: frames.length, note: raw.note, verdict: original ? "reupload" : "likely_original", original, primary, bestClean, candidates, compilations,
     provenance: { primary, ranked },
     pipeline: {
@@ -208,13 +221,25 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
 
-  const { data: sub } = await supabase.from("subscriptions").select("plan,current_period_start,bonus_searches").single();
+  const { data: sub, error: subError } = await supabase.from("subscriptions").select("plan,current_period_start,bonus_searches").single();
+  if (subError) {
+    console.error("Credit plan lookup failed:", subError);
+    const missingBillingFields = subError.code === "42703" || subError.code === "PGRST204"
+      || /column .* does not exist/i.test(subError.message);
+    const error = missingBillingFields
+      ? "Your billing database needs an update. Run supabase/update10.sql in the Supabase SQL editor, then try again."
+      : subError.code === "PGRST116"
+        ? "No subscription record was found for your account. Refresh your billing status from the Billing page, then try again."
+        : `Couldn't load your credit plan (${subError.code ?? "database error"}). Check the server logs and try again.`;
+    return NextResponse.json({ error }, { status: 500 });
+  }
   const plan = PLANS.find((p) => p.id === (sub?.plan ?? "free"))!;
-  const { count } = await supabase.from("searches_usage").select("*", { count: "exact", head: true }).gte("created_at", windowStart(sub).toISOString());
+  const { count, error: usageError } = await supabase.from("searches_usage").select("*", { count: "exact", head: true }).gte("created_at", windowStart(sub).toISOString());
+  if (usageError) return NextResponse.json({ error: "Couldn't check your remaining credits. Please try again." }, { status: 500 });
   const overLimit = plan.limit !== null && (count ?? 0) >= plan.limit;
   const bonus: number = sub?.bonus_searches ?? 0; // from the feedback survey; used only after the plan's own searches run out
   if (overLimit && bonus <= 0)
-    return NextResponse.json({ error: "You've used all your searches. Upgrade, or take our short survey for 10 free searches." }, { status: 402 });
+    return NextResponse.json({ error: "You've used all your credits. Upgrade, or take our short survey for 10 free credits." }, { status: 402 });
 
   const enc = new TextEncoder();
   const stream = new ReadableStream({
@@ -223,8 +248,12 @@ export async function POST(req: Request) {
       try {
         const result = await run(body, plan, (pct, msg) => send({ type: "progress", pct: Math.round(pct), msg }));
         send({ type: "progress", pct: 96, msg: "4/4 Provenance: saving results" });
-        await supabase.from("searches_usage").insert({ user_id: user.id, source: body.url ?? body.name ?? "upload", result });
-        if (overLimit) await admin().from("subscriptions").update({ bonus_searches: Math.max(0, bonus - 1) }).eq("user_id", user.id);
+        const { error: saveError } = await supabase.from("searches_usage").insert({ user_id: user.id, source: body.url ?? body.name ?? "upload", result });
+        if (saveError) throw new Error(`Couldn't save this search: ${saveError.message}`);
+        if (overLimit) {
+          const { error: bonusError } = await admin().from("subscriptions").update({ bonus_searches: Math.max(0, bonus - 1) }).eq("user_id", user.id);
+          if (bonusError) throw new Error(`Couldn't update your bonus credits: ${bonusError.message}`);
+        }
         send({ type: "progress", pct: 100, msg: "4/4 Provenance: done" });
         send({ type: "result", data: result });
       } catch (e: any) { send({ type: "error", error: e.message ?? "Trace failed." }); }
