@@ -1,14 +1,11 @@
 // lib/pipeline/types.ts: shared types for the four-stage reverse-search pipeline.
 import type { Platform } from "@/lib/platforms";
 
-export type EngineId = "google_vision" | "google_lens" | "yandex" | "google_videos" | "youtube_search" | "creator_page";
+export type EngineId = "google_vision" | "google_lens" | "yandex";
 export const ENGINE_LABEL: Record<EngineId, string> = {
   google_vision: "Google Vision",
   google_lens: "Google Lens",
   yandex: "Yandex Images",
-  google_videos: "Google Videos",
-  youtube_search: "YouTube search",
-  creator_page: "Creator page",
 };
 
 /** A candidate while it is being discovered (stage 2). */
@@ -20,14 +17,10 @@ export interface Cand {
   handle?: string; // set when it came from a credited creator's page
 }
 
-/** Independent evidence for a candidate, each 0-100 (null = not available for this candidate). */
+/** Visual evidence for a candidate, each 0-100. */
 export interface Signals {
-  visual: number; // look-alike to our key frames
-  engines: number; // agreement between search engines and frames
-  audio: number | null; // audio similarity match
-  ocr: number | null; // on-screen text overlap
-  metadata: number | null; // title and description vs the scene's subject
-  duration_ok: boolean | null; // is the candidate long enough to contain the clip?
+  visual: number;
+  engines: number;
 }
 
 export interface Candidate {
@@ -52,6 +45,6 @@ export interface Candidate {
   reasons: string[];
 }
 /** Candidate plus fields only the pipeline needs (stripped before the result is returned). */
-export type Verified = Candidate & { _links: string[]; attrib: string[]; _text: string };
+export type Verified = Candidate;
 
 export interface RankedSource extends Candidate { rank: number; is_primary: boolean }

@@ -13,12 +13,13 @@ import ProgressBar from "@/components/ProgressBar";
 import SourceVerdict from "@/components/SourceVerdict";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { windowStart } from "@/lib/usage";
-import { loadVideo, grabFrames, detectScenes, type Seg, type CropBox } from "@/lib/clientFrames";
+import { loadVideo, grabFrames, detectScenes, sampleTimes, type Seg, type CropBox } from "@/lib/clientFrames";
 import CropEditor, { type Edit } from "@/components/CropEditor";
 import type { PlanId } from "@/lib/plans";
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const date = (d: string) => new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+const matchesForDisplay = (data: any) => [...(data?.candidates ?? []), ...(data?.compilations ?? [])].sort((a, b) => b.score - a.score);
 type Prog = { pct: number; msg: string } | null;
 
 export default function Dashboard() {
@@ -113,45 +114,26 @@ export default function Dashboard() {
     const rep = (pct: number, msg: string) => setProg({ pct, msg });
     try {
       rep(1, "Finding scene cuts");
-      let segments: Seg[] = await detectScenes(v, (p) => rep(4 + p * 26, "Finding scene cuts"), { start, end }), mode = "scene cuts";
-
-      // One set of small frames feeds both ranking detection and AI scene splitting
-      const n = span > 20 ? Math.min(40, Math.max(12, Math.floor(span / 3))) : 10;
-      const times = Array.from({ length: n }, (_, i) => start + (span * (i + 0.5)) / n);
-      const small = await grabFrames(v, times, 480, 0.6, (p) => rep(30 + p * 12, "Sampling frames"));
-      const sent = small.map((data, i) => ({ t: times[i] - start, data }));
-      const post2 = (path: string) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ frames: sent, duration: span }) }).then((x) => x.json()).catch(() => null);
-      let summary = "";
-      if (span > 20) { // ranking videos: cut at each new number (full frame, so the numbers stay visible)
-        rep(43, "Looking for ranking numbers");
-        const r = await post2("/api/segment");
-        if (r?.segments) { segments = r.segments.map((s: Seg) => ({ ...s, start: s.start + start, end: s.end + start })); mode = `ranking #${r.first} to #${r.last}`; }
-      }
-      if (!mode.startsWith("ranking") && status?.scene) { // otherwise let the AI mark hard cuts
-        rep(46, "Finding scene boundaries with AI");
-        const r = await post2("/api/scenes");
-        if (r?.segments?.length) { segments = r.segments.map((s: Seg) => ({ ...s, start: s.start + start, end: s.end + start })); mode = "AI scene detection"; summary = r.summary ?? ""; }
-      }
-
-      const ts = Array.from({ length: 12 }, (_, i) => start + (span * (i + 0.5)) / 12);
-      const frames = await grabFrames(v, ts, 720, 0.85, (p) => rep(48 + p * 7, "Capturing search frames"), crop);
-      const data = await post({ frames, name, frameTimes: ts.map((t) => t - start), clipDuration: span, hint: summary }, setProg, [55, 100]);
+      const segments: Seg[] = await detectScenes(v, (p) => rep(4 + p * 26, "Finding scene cuts"), { start, end });
+      const ts = sampleTimes(start, end);
+      const frames = await grabFrames(v, ts, 480, 0.65, (p) => rep(35 + p * 20, "Capturing 250 ms frames"), crop);
+      const data = await post({ frames, name, frameTimes: ts.map((t) => t - start), clipDuration: span }, setProg, [55, 100]);
       if (!data) return;
-      file.current = { video: v, url: v.src, crop }; setSegMode(mode);
+      file.current = { video: v, url: v.src, crop }; setSegMode("scene cuts");
       setResult({ ...data, title: name, duration: v.duration, segments });
     } catch (e: any) { setError(e.message); setProg(null); }
   }
 
   async function reverseClip(i: number) {
     const s: Seg = result.segments[i];
-    const hint = [s.description, ...(s.keywords ?? [])].filter(Boolean).join(", "); // what the AI saw in this scene setSeg(i); setClipRes(null); setError("");
+    setSeg(i); setClipRes(null); setError("");
     let data;
     if (file.current) {
-      const t = Array.from({ length: 8 }, (_, k) => s.start + ((s.end - s.start) * (k + 0.5)) / 8);
+      const t = sampleTimes(s.start, s.end);
       setClipProg({ pct: 2, msg: "Capturing clip frames" });
-      const frames = await grabFrames(file.current.video, t, 720, 0.85, undefined, file.current.crop);
-      data = await post({ frames, name: `${result.title} (${s.label})`, frameTimes: t.map((x) => x - s.start), clipDuration: s.end - s.start, hint }, setClipProg, [10, 100]);
-    } else data = await post({ url: result.link, start: s.start, end: s.end, hint }, setClipProg);
+      const frames = await grabFrames(file.current.video, t, 480, 0.65, undefined, file.current.crop);
+      data = await post({ frames, name: `${result.title} (${s.label})`, frameTimes: t.map((x) => x - s.start), clipDuration: s.end - s.start }, setClipProg, [10, 100]);
+    } else data = await post({ url: result.link, start: s.start, end: s.end }, setClipProg);
     if (data) setClipRes({ index: i, ...data });
   }
 
@@ -186,7 +168,9 @@ export default function Dashboard() {
 
           {status && (!status.worker || !status.lens) && (
             <p className="rounded-xl border border-line bg-surface px-4 py-3 text-xs">
-              Accuracy boosters off:{!status.worker && " exact link frames (deploy the worker)"}{!status.worker && !status.lens && ","}{!status.lens && " Google Lens (add SERPAPI_KEY)"}. Uploads still get frame selection and verification.
+              {!status.worker && "Linked-video searches need the frame worker for exact frame capture. "}
+              {!status.lens && "Google Lens and Yandex reverse search are off; add SERPAPI_KEY for more image-search coverage. "}
+              Uploaded videos can still be searched from browser-captured frames.
             </p>
           )}
 
@@ -227,26 +211,12 @@ export default function Dashboard() {
                   <ClipPlayer result={result} seg={seg != null ? segs[seg] : null} fileUrl={file.current?.url} />
                   <div className="text-sm">
                     <h2 className="text-lg font-semibold text-white">{result.title}</h2>
-                    <p>{[result.channel, result.publishedAt && "Uploaded " + date(result.publishedAt), result.duration ? fmt(result.duration) : "", result.views ? `${result.views.toLocaleString()} views` : "", result.platform].filter(Boolean).join(" · ")}</p>
+                    <p>{[result.duration ? fmt(result.duration) : "", result.platform].filter(Boolean).join(" · ")}</p>
                     <p className="mt-2">
-                      <span className={`rounded-full px-3 py-1 text-xs font-medium ${result.verdict === "reupload" ? "bg-red-400/10 text-red-300" : "bg-cream/10 text-cream"}`}>
-                        {result.verdict === "reupload" ? "Likely a re-upload" : "No earlier source found"}</span>
-                      <span className="ml-2 text-xs">{result.framesUsed} best frames searched</span></p>
+                      <span className="rounded-full bg-cream/10 px-3 py-1 text-xs font-medium text-cream">
+                        {result.verdict === "visual_only" ? "Visual-only search" : "Previous search"}</span>
+                      <span className="ml-2 text-xs">{result.framesUsed} sampled frames searched</span></p>
                     {result.note && <p className="mt-1 text-xs text-cream">{result.note}</p>}
-                    {result.sourceDetails && (
-                      <details className="mt-3 rounded-xl border border-line bg-surface p-3 text-xs">
-                        <summary className="cursor-pointer text-white">Source video details and captions</summary>
-                        <div className="mt-3 space-y-2">
-                          {result.sourceDetails.description && <p className="whitespace-pre-wrap">{result.sourceDetails.description}</p>}
-                          {result.sourceDetails.tags?.length > 0 && <p><span className="text-white">Tags: </span>{result.sourceDetails.tags.join(", ")}</p>}
-                          {result.sourceDetails.categoryId && <p><span className="text-white">Category ID: </span>{result.sourceDetails.categoryId}</p>}
-                          {result.sourceDetails.likes != null && <p><span className="text-white">Likes: </span>{result.sourceDetails.likes.toLocaleString()}{result.sourceDetails.commentCount != null && ` · ${result.sourceDetails.commentCount.toLocaleString()} comments`}</p>}
-                          {result.sourceDetails.captions
-                            ? <p className="max-h-48 overflow-y-auto whitespace-pre-wrap"><span className="text-white">Captions: </span>{result.sourceDetails.captions}</p>
-                            : <p className="text-body/70">Captions were not available from the source.</p>}
-                        </div>
-                      </details>
-                    )}
                     {result.context?.classification && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                         <span className="rounded-full bg-accent/20 px-2 py-0.5 font-medium text-accent">{result.context.classification}</span>
@@ -282,7 +252,7 @@ export default function Dashboard() {
                         <h4 className="text-white">Matches for {segs[clipRes.index].label}</h4>
                         <SourceVerdict data={clipRes} workerOn={!!status?.worker} />
                         {clipRes.note && <p className="text-xs text-cream">{clipRes.note}</p>}
-                        <MatchGrid items={clipRes.candidates} originalUrl={clipRes.original?.url} />
+                        <MatchGrid items={matchesForDisplay(clipRes)} originalUrl={clipRes.original?.url} />
                       </div>
                     )}
                   </div>
@@ -290,13 +260,7 @@ export default function Dashboard() {
 
                 <div>
                   <h3 className="mb-3 text-xl font-semibold text-white">Matches for the full video</h3>
-                  <MatchGrid items={result.candidates} originalUrl={result.original?.url} />
-                  {result.compilations?.length > 0 && (
-                    <details className="mt-6 rounded-2xl border border-line bg-surface p-4">
-                      <summary className="cursor-pointer text-sm text-white">Compilations, reactions and top-N re-uploads ({result.compilations.length}), ranked lower</summary>
-                      <div className="mt-4"><MatchGrid items={result.compilations} /></div>
-                    </details>
-                  )}
+                  <MatchGrid items={matchesForDisplay(result)} originalUrl={result.original?.url} />
                 </div>
               </motion.section>
             )}

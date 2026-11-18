@@ -18,14 +18,20 @@ export async function annotateMany(imgs: Img[], types: string[]): Promise<any[]>
 }
 
 /** Reverse image search: matching pages (with titles) plus what Google thinks the subject is. */
-export async function webInfo(img: Img) {
-  const [r] = await annotateMany([img], ["WEB_DETECTION"]);
+const webResult = (r: any) => {
   const w = r?.webDetection ?? {};
   return {
     pages: (w.pagesWithMatchingImages ?? []).map((p: any) => ({ url: p.url as string, title: (p.pageTitle ?? "") as string })),
     entities: (w.webEntities ?? []).filter((e: any) => e.description).map((e: any) => ({ d: e.description as string, s: (e.score ?? 0) as number })),
     guess: (w.bestGuessLabels ?? []).map((g: any) => g.label as string),
   };
+};
+export async function webInfo(img: Img) {
+  const [r] = await annotateMany([img], ["WEB_DETECTION"]);
+  return webResult(r);
+}
+export async function webInfoMany(imgs: Img[]) {
+  return (await annotateMany(imgs, ["WEB_DETECTION"])).map(webResult);
 }
 export async function matchingPages(img: Img): Promise<string[]> { return (await webInfo(img)).pages.map((p: { url: string }) => p.url); }
 

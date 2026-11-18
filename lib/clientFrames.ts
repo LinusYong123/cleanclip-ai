@@ -17,6 +17,14 @@ const seek = (v: HTMLVideoElement, t: number) => new Promise<void>((r) => {
   v.currentTime = Math.min(Math.max(0, t), Math.max(0, v.duration - 0.05));
 });
 
+export function sampleTimes(start: number, end: number, interval = 0.25, maxFrames = 40) {
+  const span = end - start;
+  if (!(span > 0)) return [];
+  const step = Math.max(interval, span / maxFrames);
+  const count = Math.max(1, Math.min(maxFrames, Math.floor(span / step - 0.5 + 1e-9) + 1));
+  return Array.from({ length: count }, (_, i) => start + Math.min(span, step) / 2 + i * step);
+}
+
 /** If `crop` is given, only that part of each frame is captured. */
 export async function grabFrames(v: HTMLVideoElement, times: number[], width = 640, quality = 0.8, onProgress?: Progress, crop?: CropBox | null): Promise<string[]> {
   const sx = crop ? crop.x * v.videoWidth : 0, sy = crop ? crop.y * v.videoHeight : 0;

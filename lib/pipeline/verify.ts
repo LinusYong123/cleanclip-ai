@@ -1,32 +1,26 @@
 // Stage 3: deep multi-signal verification of one candidate.
-// Four independent signals: visual look-alike, search-engine agreement, on-screen text (OCR), and metadata (title, description, length).
+// Candidate thumbnails are compared only with sampled source-video frames.
 import sharp from "sharp";
-import { getInfo, parseVideoUrl } from "@/lib/platforms";
-import { cleanliness } from "@/lib/vision";
+import { parseVideoUrl } from "@/lib/platforms";
 import { fetchBuf } from "@/lib/frames";
 import { prepareFrame, signature, similarity, type Sig } from "@/lib/frameQuality";
-import { classify } from "@/lib/sources";
-import { buildReasons, combine, engineSignal, keywordOverlap, overlap, tokens } from "./signals";
-import type { Cand, Signals, Verified } from "./types";
+import { engineSignal } from "./signals";
+import { ENGINE_LABEL, type Cand, type Candidate, type Signals } from "./types";
 
 export interface VerifyContext {
-  ours: Sig[]; // signatures of our key frames
-  searched: number; // number of key frames
-  ourTokens: Set<string>; // words seen on screen in our frames
-  keywords: string[]; // what the scene is about (AI keywords plus the title's core words)
-  clipDuration: number | null; // seconds, when known
-  selfDate?: string; // upload date of the submitted video, when known
+  ours: Sig[]; // signatures for every sampled source frame
 }
 
-export async function verifyCandidate(url: string, c: Cand, vc: VerifyContext, via?: string): Promise<Verified | null> {
-  const info = await getInfo(url).catch(() => null);
-  const thumb = info?.thumbs[0] ?? c.thumb;
-  if (!thumb) return null;
+export async function verifyCandidate(url: string, c: Cand, vc: VerifyContext): Promise<Candidate | null> {
   const p = parseVideoUrl(url);
   if (!p) return null;
-  const raw = await fetchBuf(thumb).catch(() => null);
+  const thumb = c.thumb ?? (p.platform === "youtube" ? `https://i.ytimg.com/vi/${p.id}/hqdefault.jpg` : "");
+  const raw = thumb ? await fetchBuf(thumb).catch(() => {
+    console.warn("Candidate preview could not be fetched; retaining the visual-search result.");
+    return null;
+  }) : null;
 
-  // Signal 1: visual look-alike (also tries a mirrored copy)
+  // Compare the candidate image to every sampled frame, including a mirrored copy.
   let sim = 0, mirrored = false;
   if (raw) {
     try {
@@ -35,44 +29,21 @@ export async function verifyCandidate(url: string, c: Cand, vc: VerifyContext, v
       sim = await simOf(prep);
       const flipped = await simOf(await sharp(prep).flop().toBuffer());
       if (flipped > sim + 0.15) { sim = flipped; mirrored = true; }
-    } catch { /* keep 0 */ }
+    } catch (error) {
+      console.warn("Candidate preview could not be compared; retaining the visual-search result.", error);
+    }
   }
 
-  // Signal 3: text on screen in the candidate's thumbnail vs text in our frames (also reads logos and captions for cleanliness)
-  const clean = await cleanliness(raw ?? thumb).catch(() => null);
-  const ocr = clean ? overlap(vc.ourTokens, tokens(clean.fullText)) : null;
-
-  // Signal 4: metadata (subject words in the title and description, and whether the video is long enough to contain the clip)
-  const title = info?.title ?? c.title ?? "";
-  const cls = classify(title, info?.author ?? "", info?.description ?? "");
-  const metadata = keywordOverlap(`${title} ${(info?.description ?? "").slice(0, 600)} ${info?.author ?? ""}`, vc.keywords);
-  const durationOk = info?.duration && vc.clipDuration ? info.duration >= vc.clipDuration * 0.9 : null;
-
-  const signals: Signals = {
-    visual: Math.round(sim * 100),
-    engines: engineSignal(c.engines.size, c.hits, vc.searched), // Signal 2
-    ocr: ocr === null ? null : Math.round(ocr * 100),
-    metadata: metadata === null ? null : Math.round(metadata * 100),
-    duration_ok: durationOk,
-  };
-
-  // Combine, then apply provenance adjustments
-  let score = combine(signals);
-  if (cls.compilation) score -= cls.channelFlag ? 40 : 30; // edits, clips, reactions, top-N re-uploads
-  if (cls.official) score += 10; // studios, developers, news archives, stock libraries
-  if (p.platform === "vimeo") score += 5;
-  if (via && sim >= 0.5) score += 20; // credited by a compilation and looks like our footage
-  if (c.handle && sim >= 0.5) score += 15; // found on the credited creator's own pages
-  score = Math.max(0, Math.min(100, Math.round(score)));
-
+  const visual = Math.round(sim * 100);
   const engines = [...c.engines];
+  const engineAgreement = engineSignal(engines.length, c.hits, vc.ours.length);
+  const signals: Signals = { visual, engines: engineAgreement };
+  const score = Math.round(visual * 0.8 + engineAgreement * 0.2);
+  const reasons = [raw ? `Visual similarity ${visual}%` : "Preview unavailable; ranked by reverse-image search agreement"];
+  if (engines.length) reasons.push(`Reverse-image matches: ${engines.map((engine) => ENGINE_LABEL[engine]).join(", ")}`);
   return {
-    url, platform: p.platform, videoId: p.id, title, author: info?.author ?? "", publishedAt: info?.publishedAt, thumbnail: thumb,
+    url, platform: p.platform, videoId: p.id, title: c.title ?? url, author: "", thumbnail: thumb,
     similarity: signals.visual, score, confidence: score >= 65 ? "high" : score >= 35 ? "medium" : "low",
-    clean: clean ? { hasText: clean.hasText, hasLogo: clean.hasLogo, text: clean.text, fullText: "", score: clean.score } : null,
-    compilation: cls.compilation, official: cls.official, mirrored, foundVia: via, byHandle: c.handle, engines, signals,
-    reasons: buildReasons({ signals, engines, similarity: signals.visual, publishedAt: info?.publishedAt, selfDate: vc.selfDate, official: cls.official,
-      compilation: cls.compilation, mirrored, via, handle: c.handle }),
-    _links: cls.links, attrib: cls.attrib, _text: `${title}\n${info?.description ?? ""}`,
+    clean: null, compilation: false, official: false, mirrored, engines, signals, reasons,
   };
 }

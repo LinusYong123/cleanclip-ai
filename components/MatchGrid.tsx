@@ -9,7 +9,7 @@ import { embedUrl } from "@/lib/embed";
 const date = (d?: string) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "date unknown");
 const tone = { high: "bg-accent/20 text-accent", medium: "bg-cream/10 text-cream", low: "bg-line text-body" } as Record<string, string>;
 
-/** Match cards with thumbnail previews. Clicking a preview plays the video full screen. */
+/** Match cards with optional thumbnails. Clicking a preview plays the video full screen. */
 export default function MatchGrid({ items, originalUrl }: { items: any[]; originalUrl?: string }) {
   const [open, setOpen] = useState<any | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -52,8 +52,10 @@ export default function MatchGrid({ items, originalUrl }: { items: any[]; origin
           <div key={c.url} className={`overflow-hidden rounded-2xl border bg-surface ${c.url === originalUrl ? "border-accent" : "border-line"}`}>
             <button onClick={() => (embedUrl(c.platform, c.videoId, c.url) ? setOpen(c) : window.open(c.url, "_blank"))}
               className="group relative block aspect-video w-full bg-black" aria-label="Play video full screen">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={c.thumbnail} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+              {c.thumbnail ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={c.thumbnail} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+              ) : <span className="flex h-full items-center justify-center text-sm text-white">Preview unavailable</span>}
               <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover:opacity-100"><Play className="h-10 w-10 text-white" /></span>
             </button>
             <div className="space-y-2 p-4 text-sm">
