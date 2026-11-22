@@ -51,7 +51,11 @@ export async function segmentAndSample(bufs: Buffer[], want = 5): Promise<Keyfra
   const cand = scenes.flatMap((s) => [...s].sort((a, b) => b.score - a.score).slice(0, 2)).sort((a, b) => b.score - a.score).slice(0, 10);
   await addInsights(cand);
 
-  const chosen = scenes.map((s) => [...s].sort((a, b) => b.total - a.total)[0]).sort((a, b) => b.total - a.total).slice(0, want);
+  const representatives = scenes.map((s) => [...s].sort((a, b) => b.total - a.total)[0]);
+  const chosen = representatives.length <= want
+    ? [...representatives]
+    : Array.from({ length: want }, (_, i) =>
+        representatives[Math.round(i * (representatives.length - 1) / Math.max(want - 1, 1))]);
   if (chosen.length < want) {
     // Short clips are often a single scene: add visually distinct frames from it
     const rest = good.filter((g) => !chosen.includes(g)).sort((a, b) => b.total - a.total);

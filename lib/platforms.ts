@@ -3,7 +3,7 @@ export type Platform = "youtube" | "tiktok" | "instagram" | "facebook" | "vimeo"
 
 const PATTERNS: Record<Platform, RegExp> = {
   youtube: /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/,
-  tiktok: /tiktok\.com\/.*video\/(\d+)/,
+  tiktok: /tiktok\.com\/(?:@[\w.-]+\/video\/|v\/|.*[?&]v=)?(\d{15,25})/i,
   vimeo: /vimeo\.com\/(?:.*\/)?(\d{6,})/,
   instagram: /instagram\.com\/(?:[\w.]+\/)?(?:reels?|p|tv)\/([\w-]+)/,
   facebook: /(?:facebook\.com\/(?:.*\/videos\/|watch\/?\?v=|reel\/|share\/[vr]\/)|fb\.watch\/)([\w-]+)/,

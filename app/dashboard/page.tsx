@@ -90,7 +90,7 @@ export default function Dashboard() {
     }
     setTimeout(() => report(null), 500); load(); return out;
   }
-  const reset = () => { setError(""); setResult(null); setClipRes(null); setSeg(null); setSegMode(""); file.current = null; };
+  const reset = () => { setError(""); setResult(null); setSeg(null); setSegMode(""); file.current = null; };
 
   async function trace(e: React.FormEvent) {
     e.preventDefault(); reset();
@@ -107,20 +107,19 @@ export default function Dashboard() {
     catch (e: any) { setError(e.message); setProg(null); }
   }
 
-  /** Step 2: trace only the chosen time range, using only the chosen part of the picture. */
+  /** Step 2: trace the chosen time range using high-frequency frame capture. */
   async function runUpload(edit: Edit) {
     const { video: v, name } = pending!; setPending(null);
     const { start, end, crop } = edit, span = end - start;
     const rep = (pct: number, msg: string) => setProg({ pct, msg });
     try {
-      rep(1, "Finding scene cuts");
-      const segments: Seg[] = await detectScenes(v, (p) => rep(4 + p * 26, "Finding scene cuts"), { start, end });
-      const ts = sampleTimes(start, end);
-      const frames = await grabFrames(v, ts, 480, 0.65, (p) => rep(35 + p * 20, "Capturing 250 ms frames"), crop);
-      const data = await post({ frames, name, frameTimes: ts.map((t) => t - start), clipDuration: span }, setProg, [55, 100]);
+      rep(1, "Capturing high-frequency frames");
+      const ts = sampleTimes(start, end, 0.1, 300);
+      const frames = await grabFrames(v, ts, 480, 0.65, (p) => rep(5 + p * 45, "Capturing frames every few milliseconds"), crop);
+      const data = await post({ frames, name, frameTimes: ts.map((t) => t - start), clipDuration: span }, setProg, [50, 100]);
       if (!data) return;
-      file.current = { video: v, url: v.src, crop }; setSegMode("scene cuts");
-      setResult({ ...data, title: name, duration: v.duration, segments });
+      file.current = { video: v, url: v.src, crop }; setSegMode("");
+      setResult({ ...data, title: name, duration: v.duration, segments: [] });
     } catch (e: any) { setError(e.message); setProg(null); }
   }
 
@@ -228,35 +227,6 @@ export default function Dashboard() {
                 </div>
 
                 <SourceVerdict data={result} workerOn={!!status?.worker} />
-
-                {segs.length > 0 && (
-                  <div id="clips" className="rounded-2xl border border-line bg-surface p-5">
-                    <div className="mb-4 flex items-center justify-between">
-                      <h3 className="font-semibold text-white">Clips</h3>
-                      {segMode && <span className="rounded-full bg-cream/10 px-3 py-1 text-xs text-cream">Split by {segMode}</span>}
-                    </div>
-                    <ul className="space-y-2 text-sm">
-                      {segs.map((s, i) => (
-                        <li key={i} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 transition ${seg === i ? "bg-accent/10" : ""}`}>
-                          <span><span className="text-white">{s.label}</span> · {fmt(s.start)}–{fmt(s.end)}{s.description && <span className="block text-xs">{s.description}</span>}</span>
-                          <span className="flex gap-2">
-                            <button onClick={() => setSeg(i)} className="flex items-center gap-1 rounded-lg border border-line px-3 py-1 text-xs text-white transition hover:border-accent"><Play className="h-3 w-3" /> Play</button>
-                            <button onClick={() => reverseClip(i)} disabled={!!clipProg} className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-bg transition hover:brightness-110 disabled:opacity-50"><Scissors className="h-3 w-3" /> Find source</button>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <AnimatePresence>{clipProg && <motion.div className="mt-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><ProgressBar pct={clipProg.pct} msg={clipProg.msg} /></motion.div>}</AnimatePresence>
-                    {clipRes && (
-                      <div className="mt-5 space-y-3">
-                        <h4 className="text-white">Matches for {segs[clipRes.index].label}</h4>
-                        <SourceVerdict data={clipRes} workerOn={!!status?.worker} />
-                        {clipRes.note && <p className="text-xs text-cream">{clipRes.note}</p>}
-                        <MatchGrid items={matchesForDisplay(clipRes)} originalUrl={clipRes.original?.url} />
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 <div>
                   <h3 className="mb-3 text-xl font-semibold text-white">Matches for the full video</h3>

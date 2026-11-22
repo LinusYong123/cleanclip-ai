@@ -1,11 +1,12 @@
 // lib/pipeline/types.ts: shared types for the four-stage reverse-search pipeline.
 import type { Platform } from "@/lib/platforms";
 
-export type EngineId = "google_vision" | "google_lens" | "yandex";
+export type EngineId = "google_vision" | "google_lens" | "yandex" | "text_search";
 export const ENGINE_LABEL: Record<EngineId, string> = {
   google_vision: "Google Vision",
   google_lens: "Google Lens",
   yandex: "Yandex Images",
+  text_search: "Google, Google Videos & YouTube",
 };
 
 /** A candidate while it is being discovered (stage 2). */
@@ -43,6 +44,7 @@ export interface Candidate {
   engines: EngineId[];
   signals: Signals;
   reasons: string[];
+  matches?: { frameIndex: number; score: number }[];
 }
 /** Candidate plus fields only the pipeline needs (stripped before the result is returned). */
 export type Verified = Candidate;

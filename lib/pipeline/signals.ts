@@ -1,7 +1,7 @@
 // lib/pipeline/signals.ts: pure helpers for visual verification and ranking.
 /** Agreement across reverse-image engines and sampled frames, 0-100. */
 export function engineSignal(engineCount: number, frameHits: number, searched: number): number {
-  const engines = Math.min(engineCount, 3) / 3;
+  const engines = Math.min(engineCount, 4) / 4;
   const frames = Math.min(frameHits / Math.max(searched, 1), 1);
   return Math.round(100 * (0.6 * engines + 0.4 * frames));
 }

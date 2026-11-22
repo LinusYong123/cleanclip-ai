@@ -66,6 +66,9 @@ export default function SourceVerdict({ data, workerOn }: { data: any; workerOn:
         <div className="space-y-2 text-xs">
           <p className="text-sm text-white">Why this match</p>
           <ul className="list-disc space-y-0.5 pl-4">{p.reasons.map((r: string) => <li key={r}>{r}</li>)}</ul>
+          {p.matches?.length > 0 && (
+            <p className="pt-2 text-xs text-cream">Top matching source frame indices: {p.matches.map((m: any) => `${m.frameIndex} (${m.score}%)`).join(", ")}</p>
+          )}
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1 sm:grid-cols-4">
             {([["visual", "Frame similarity"], ["engines", "Image-search agreement"]] as const).map(([k, label]) =>
               p.signals?.[k] == null ? null : (

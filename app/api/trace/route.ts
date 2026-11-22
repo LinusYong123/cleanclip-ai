@@ -12,16 +12,12 @@ import { discover } from "@/lib/pipeline/discover";
 import { verifyCandidate, type VerifyContext } from "@/lib/pipeline/verify";
 import { rankVisualMatches } from "@/lib/pipeline/provenance";
 import { ENGINE_LABEL, type Candidate, type Cand } from "@/lib/pipeline/types";
+import { segmentAndSample } from "@/lib/pipeline/keyframes";
 
 export const maxDuration = 60; // Vercel Hobby cap
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 type Emit = (pct: number, msg: string) => void;
 const stage = (emit: Emit, n: number, name: string) => (pct: number, msg: string) => emit(pct, `${n}/4 ${name}: ${msg}`);
-
-const equalScenes = (d: number) => {
-  const n = Math.min(6, Math.max(2, Math.floor(d / 20)));
-  return Array.from({ length: n }, (_, i) => ({ start: Math.floor((d / n) * i), end: Math.floor((d / n) * (i + 1)), label: `Scene ${i + 1}` }));
-};
 
 type RawFrames = { bufs: Buffer[]; offsets?: number[]; duration: number };
 
@@ -34,14 +30,14 @@ async function resolveUrl(url: string) {
 
 async function rawFrames(b: any, url: string | null): Promise<RawFrames> {
   if (b.frames?.length) return {
-    bufs: (b.frames as string[]).slice(0, 40).map((d) => Buffer.from(d.split(",")[1], "base64")),
+    bufs: (b.frames as string[]).slice(0, 300).map((d) => Buffer.from(d.split(",")[1], "base64")),
     offsets: Array.isArray(b.frameTimes) ? b.frameTimes as number[] : undefined,
     duration: 0,
   };
   if (!url || !process.env.WORKER_URL || !process.env.WORKER_SECRET)
     throw new Error("Exact-frame search requires the frame worker. Configure WORKER_URL and WORKER_SECRET.");
   const clip = b.start != null && b.end != null;
-  const w = await workerFrames(url, clip ? b.start : 0, clip ? b.end - b.start : 0, 40, 0.25);
+  const w = await workerFrames(url, clip ? b.start : 0, clip ? b.end - b.start : 0, 120, 0.5);
   if (!w.bufs.length) throw new Error("The frame worker did not return any video frames.");
   return { bufs: w.bufs, offsets: w.times.map((t) => t - (clip ? b.start : 0)), duration: w.duration };
 }
@@ -59,16 +55,18 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   if (!raw.bufs.length) throw new Error("Couldn't get any frames from that video.");
 
   const duration = raw.duration || body.clipDuration || 0;
-  const segments = source && !clip && duration ? equalScenes(duration) : [];
-  const segmentMode = segments.length ? "equal scenes" : undefined;
-  const frames: Buffer[] = raw.bufs;
-  const idx = frames.map((_, i) => i);
+  const segments: any[] = [];
+  const segmentMode = undefined;
+  s1(22, "selecting distinct, high-quality frames");
+  const keyframes = await segmentAndSample(raw.bufs, 12);
+  const frames = keyframes.frames;
+  const idx = keyframes.idx;
   const ours = await Promise.all(frames.map(async (frame: Buffer) => signature(await prepareFrame(frame))));
-  const context = { text: false, ranking: false, watermark: false, bars: false, sidebars: false };
+  const context = keyframes.context;
 
   const s2 = stage(emit, 2, "Visual search");
   s2(28, "searching sampled frames");
-  const disc = await discover({ frames, source: searchSource, onProgress: (f, m) => s2(28 + 32 * f, m) });
+  const disc = await discover({ frames, source: searchSource, textClues: keyframes.ocr, onProgress: (f, m) => s2(28 + 32 * f, m) });
   const { cands } = disc;
 
   const s3 = stage(emit, 3, "Visual verification");
@@ -76,12 +74,13 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   const max = plan.id === "elite" ? 10 : plan.id === "pro" ? 8 : 5;
   const weight = (c: Cand) => c.engines.size * 2 + c.hits;
   const top = [...cands.entries()].sort((a, b) => weight(b[1]) - weight(a[1])).slice(0, max + 6);
-  let checked = 0;
-  const analysed = (await Promise.all(top.map(async ([u, c]) => {
-    const r = await verifyCandidate(u, c, vctx);
-    s3(60 + (24 * ++checked) / Math.max(top.length, 1), "comparing candidate frames visually");
-    return r;
-  }))).filter(Boolean) as Candidate[];
+  const analysed: Candidate[] = [];
+  const batchSize = 3;
+  for (let i = 0; i < top.length; i += batchSize) {
+    const batch = await Promise.all(top.slice(i, i + batchSize).map(([u, c]) => verifyCandidate(u, c, vctx)));
+    analysed.push(...batch.filter((candidate): candidate is Candidate => candidate !== null));
+    s3(60 + (24 * Math.min(i + batch.length, top.length)) / Math.max(top.length, 1), "comparing candidate footage");
+  }
 
   const s4 = stage(emit, 4, "Visual ranking");
   s4(94, "ranking by frame similarity");
@@ -100,11 +99,11 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   return {
     platform: source?.platform ?? "upload", videoId: source?.id, title: body.name ?? url ?? "Uploaded video", duration, link: url ?? undefined,
     framesUsed: frames.length,
-    note: searchedSpan > 10 ? "Searched up to 40 exact frames across the video; longer spans use wider spacing than 250 ms." : undefined,
+    note: searchedSpan > 5 ? `Analyzed ${raw.bufs.length} sampled frames and searched ${frames.length} high-quality keyframes.` : undefined,
     verdict: "visual_only", original, primary, bestClean: null, candidates, compilations,
     provenance: { primary, ranked },
     pipeline: {
-      segmentation: { sampled: frames.length, static_dropped: 0, scenes: segments.length, kept: frames.length, duplicate_dropped: 0 },
+      segmentation: keyframes.stats,
       discovery: { engines: disc.engines.map((e) => ({ ...e, label: ENGINE_LABEL[e.id] })), candidates: cands.size },
       verification: { checked: analysed.length, compilations: 0, credited_found: 0, creator_matches: 0 },
       provenance: { ranked: ranked.length },

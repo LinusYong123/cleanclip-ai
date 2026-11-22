@@ -38,7 +38,7 @@ export type Sig = { g: number[]; h: bigint };
 export async function signature(prepared: Buffer): Promise<Sig> {
   const m = await sharp(prepared).metadata(), s = Math.min(m.width!, m.height!);
   const sq = await sharp(prepared).extract({ left: Math.floor((m.width! - s) / 2), top: Math.floor((m.height! - s) / 2), width: s, height: s }).toBuffer();
-  const g = await gray(sq, 16, 16), d = await gray(sq, 9, 8);
+  const g = await gray(sq, 32, 32), d = await gray(sq, 9, 8);
   let h = BigInt(0);
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) h = (h << BigInt(1)) | BigInt(d[y * 9 + x] > d[y * 9 + x + 1] ? 1 : 0);
   return { g, h };
@@ -59,8 +59,8 @@ function pearson(a: number[], b: number[]) {
 
 /** 0..1. Takes the better of hash similarity and correlation (which survives colour grading and compression). */
 export function similarity(a: Sig, b: Sig) {
-  const d = clamp((1 - hamming(a.h, b.h) / 64 - 0.6) / 0.35);
-  const n = clamp((pearson(a.g, b.g) - 0.35) / 0.55);
+  const d = clamp((1 - hamming(a.h, b.h) / 64 - 0.55) / 0.4);
+  const n = clamp((pearson(a.g, b.g) - 0.45) / 0.5);
   return Math.max(d, n);
 }
 
