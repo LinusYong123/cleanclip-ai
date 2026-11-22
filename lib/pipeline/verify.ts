@@ -32,13 +32,13 @@ function isTrustedVideoUrl(url: string, platform: string) {
 export async function verifyCandidate(url: string, c: Cand, vc: VerifyContext): Promise<Candidate | null> {
   const p = parseVideoUrl(url);
   if (!p || !isTrustedVideoUrl(url, p.platform)) return null;
-  const thumb = c.thumb ?? (p.platform === "youtube" ? `https://i.ytimg.com/vi/${p.id}/hqdefault.jpg` : "");
+  const thumb = c.thumb || (p.platform === "youtube" ? `https://i.ytimg.com/vi/${p.id}/hqdefault.jpg` : "");
 
   let footage: Buffer[] = [];
   try {
-    footage = (await workerFrames(url, 0, 0, 8)).bufs;
+    footage = (await workerFrames(url, 0, 0, 6, undefined, 20000)).bufs;
   } catch (error) {
-    console.warn("Candidate footage could not be sampled for visual verification.", error);
+    console.warn(`Candidate footage sampling failed for ${p.platform}:${p.id}:`, error instanceof Error ? error.message : String(error));
   }
 
   let sim = 0, mirrored = false;

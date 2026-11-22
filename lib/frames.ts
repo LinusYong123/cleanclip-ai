@@ -5,13 +5,13 @@ export const fetchBuf = async (url: string) => {
 };
 
 /** Exact frames (with timestamps and duration) from the optional worker. Empty if not configured. */
-export async function workerFrames(url: string, start: number, dur: number, n: number, interval?: number) {
+export async function workerFrames(url: string, start: number, dur: number, n: number, interval?: number, timeoutMs = 52000) {
   const none = { bufs: [] as Buffer[], times: [] as number[], duration: 0 };
   if (!process.env.WORKER_URL) return none;
   const q = new URLSearchParams({ url, start: String(start), dur: String(dur), n: String(n) });
   if (interval != null) q.set("interval", String(interval));
   const r = await fetch(`${process.env.WORKER_URL}/frames?${q}`, {
-    headers: { Authorization: `Bearer ${process.env.WORKER_SECRET}` }, signal: AbortSignal.timeout(52000),
+    headers: { Authorization: `Bearer ${process.env.WORKER_SECRET}` }, signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
     let msg = "worker failed";

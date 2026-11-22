@@ -45,7 +45,7 @@ export default function SourceVerdict({ data, workerOn }: { data: any; workerOn:
       <h3 className="flex items-center gap-2 font-semibold text-white"><ShieldCheck className="h-4 w-4 text-accent" /> Best visual match</h3>
       <div className="flex flex-col gap-4 sm:flex-row">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={p.thumbnail} alt="" referrerPolicy="no-referrer" className="h-28 w-48 rounded-lg object-cover" />
+        {p.thumbnail && <img src={p.thumbnail} alt="" referrerPolicy="no-referrer" className="h-28 w-48 rounded-lg object-cover" />}
         <dl className="space-y-1 text-sm">
           <dd><a href={p.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 font-medium text-cream underline">{p.title || p.url} <ExternalLink className="h-3 w-3" /></a></dd>
           <dd>Visual score: <span className="font-semibold text-white">{p.score}%</span> <span className="text-xs">({p.confidence}, {p.similarity}% look-alike)</span></dd>

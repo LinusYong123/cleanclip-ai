@@ -17,7 +17,7 @@ http.createServer(async (req, res) => {
   if (u.pathname === "/health") {
     try {
       await Promise.all([run(YTDLP_PATH, ["--version"]), run(FFMPEG_PATH, ["-version"])]);
-      return res.writeHead(200).end("ok");
+      return res.writeHead(200).end("ok candidate-footage-v1");
     } catch (e) {
       return res.writeHead(500).end(`Dependency missing: ${e.message}`);
     }
@@ -55,7 +55,8 @@ http.createServer(async (req, res) => {
   let n = Math.min(+q.get("n") || 200, 300); // allow capturing up to 300 dense frames
   let dir;
   try {
-    const { stdout: metaJson } = await run(YTDLP_PATH, ["-j", "--no-playlist", "--no-warnings", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "--js-runtimes", "node", "--remote-components", "ejs:github", "-f", "best[ext=mp4]/best", url]);
+    const { stdout: metaJson } = await run(YTDLP_PATH, ["-j", "--no-playlist", "--no-warnings", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "--js-runtimes", "node", "--remote-components", "ejs:github", "-f", "best[ext=mp4]/best", url],
+      { timeout: interval > 0 ? 20000 : 8000 });
     const meta = JSON.parse(metaJson);
     const src = meta.url;
     if (!src) throw new Error("yt-dlp could not find a video URL.");
@@ -70,7 +71,7 @@ http.createServer(async (req, res) => {
     const fast = !interval && dur > 90 ? ["-skip_frame", "nokey"] : [];
     const fps = `fps=fps=${1 / step}:start_time=${step / 2},scale=640:-2`;
     await run(FFMPEG_PATH, ["-ss", String(start), ...fast, "-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2", "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "-i", src, "-t", String(dur), "-vf", fps,
-      "-frames:v", String(n), "-q:v", "2", path.join(dir, "f%03d.jpg")], { timeout: 120000 });
+      "-frames:v", String(n), "-q:v", "2", path.join(dir, "f%03d.jpg")], { timeout: interval > 0 ? 120000 : 10000 });
     const files = (await fs.readdir(dir)).sort();
     const frames = await Promise.all(files.map(async (f) => (await fs.readFile(path.join(dir, f))).toString("base64")));
     const times = files.map((_, i) => start + step * (i + 0.5));

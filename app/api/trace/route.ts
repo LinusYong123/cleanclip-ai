@@ -73,7 +73,7 @@ async function run(body: any, plan: (typeof PLANS)[number], emit: Emit) {
   const vctx: VerifyContext = { ours };
   const max = plan.id === "elite" ? 10 : plan.id === "pro" ? 8 : 5;
   const weight = (c: Cand) => c.engines.size * 2 + c.hits;
-  const top = [...cands.entries()].sort((a, b) => weight(b[1]) - weight(a[1])).slice(0, max + 6);
+  const top = [...cands.entries()].sort((a, b) => weight(b[1]) - weight(a[1])).slice(0, Math.min(max, 6));
   const analysed: Candidate[] = [];
   const batchSize = 3;
   for (let i = 0; i < top.length; i += batchSize) {
